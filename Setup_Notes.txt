@@ -1,0 +1,223 @@
+================================================================
+  SMS WEATHER AUTO-RESPONDER — Setup Notes
+  Tasker Project for Android
+================================================================
+
+OVERVIEW
+--------
+This Tasker project automatically replies to incoming SMS messages
+containing an ICAO airport code (e.g. YSSY, YMML, YPAD) with the
+current METAR and TAF for that location.
+
+DATA SOURCE: aviationweather.gov (NOAA/FAA)
+  - Free, no login required, no API key
+  - Covers all Australian ICAO airports
+  - Returns official METAR/TAF data
+  - Rate limit: 100 requests/minute (more than enough)
+
+WHY NOT NAIPS?
+  NAIPS requires an authenticated web session (cookies, ASP.NET),
+  which is fragile on a phone — sessions expire, cookies get lost,
+  and the login adds 2-3 extra HTTP round-trips every time.
+  aviationweather.gov gives the same METAR/TAF data in a single
+  unauthenticated GET request, making it near-instantaneous.
+
+  If you specifically need NAIPS, see the included
+  naips_weather_fetch.js — you'll need to fill in your credentials
+  and potentially adjust the briefing URL after testing.
+
+
+FILES INCLUDED
+--------------
+1. SMS_Weather_Responder.prj.xml  — Tasker project (import this)
+2. weather_fetch.js               — JavaScript source (reference)
+3. naips_weather_fetch.js          — NAIPS alternative (if needed)
+4. Setup_Notes.txt                 — This file
+
+
+QUICK SETUP (5 minutes)
+========================
+
+OPTION A — Import the Project XML
+----------------------------------
+1. Copy SMS_Weather_Responder.prj.xml to your phone.
+2. In Tasker, long-press the home icon (bottom bar) → Import Project.
+3. Navigate to the XML file and import it.
+4. The profile "SMS Weather Auto-Responder" should appear and be
+   active immediately.
+5. Send a test SMS to your phone with just "YSSY" and verify you
+   get a reply with METAR + TAF.
+
+NOTE: If the XML import fails (Tasker version mismatch), use
+Option B below to build it manually — takes about 5 minutes.
+
+
+OPTION B — Manual Setup (Step by Step)
+---------------------------------------
+
+STEP 1: Create the Task
+  Tasker → Tasks tab → + (add) → Name: "Fetch Weather and Reply"
+
+  Action 1 — Variable Set
+    Name:  %sms_body
+    To:    %SMSRB
+
+  Action 2 — Variable Set
+    Name:  %sms_from
+    To:    %SMSRF
+
+  Action 3 — JavaScriptlet
+    Code:  (paste the contents of weather_fetch.js — see below)
+    Timeout: 45 seconds
+
+  Action 4 — If
+    Condition: %valid  eq  1
+
+  Action 5 — Send SMS
+    Number:  %sms_from
+    Message: %reply
+
+  Action 6 — End If
+
+
+STEP 2: Create the Profile
+  Tasker → Profiles tab → + (add)
+  → Event → Phone → Received Text
+  → Type: Any
+  → Leave Sender and Content fields empty (match all)
+  → Back → select task "Fetch Weather and Reply"
+
+
+STEP 3: Test
+  From another phone, send an SMS to your number containing:
+    YSSY
+  You should receive a reply like:
+
+    === YSSY ===
+
+    METAR:
+    METAR YSSY 031330Z AUTO 17006KT 9999 // FEW056 OVC110 23/21 Q1012
+
+    TAF:
+    TAF AMD YSSY 031308Z 0313/0418 18005KT 9999 -SHRA FEW015
+      FM031500 01009KT 9999 -SHRA FEW015 ...
+
+
+JAVASCRIPT CODE (for Action 3 — JavaScriptlet)
+===============================================
+Copy everything between the dashed lines:
+
+------------------------------------------------------------
+var body = sms_body.toString().trim().toUpperCase();
+
+var icao = "";
+var match = body.match(/\b([A-Z]{4})\b/);
+if (match) { icao = match[1]; }
+
+var valid = 0;
+var reply = "";
+
+if (icao.length === 4) {
+
+    var xhr1 = new XMLHttpRequest();
+    xhr1.open("GET", "https://aviationweather.gov/api/data/metar?ids=" + icao + "&format=raw", false);
+    xhr1.send();
+    var metar = (xhr1.status === 200) ? xhr1.responseText.trim() : "";
+
+    var xhr2 = new XMLHttpRequest();
+    xhr2.open("GET", "https://aviationweather.gov/api/data/taf?ids=" + icao + "&format=raw", false);
+    xhr2.send();
+    var taf = (xhr2.status === 200) ? xhr2.responseText.trim() : "";
+
+    if (metar.length > 0 || taf.length > 0) {
+        valid = 1;
+        reply = "=== " + icao + " ===\n\n";
+        reply += (metar.length > 0) ? "METAR:\n" + metar + "\n\n" : "METAR: N/A\n\n";
+        reply += (taf.length > 0) ? "TAF:\n" + taf : "TAF: N/A";
+    }
+}
+
+setLocal("reply", reply);
+setLocal("valid", valid.toString());
+------------------------------------------------------------
+
+
+HOW IT WORKS
+============
+1. Any incoming SMS triggers the profile.
+2. The JavaScriptlet extracts the first 4-letter uppercase word
+   from the SMS body as the ICAO code.
+3. Two HTTP GET requests fetch raw METAR and TAF from
+   aviationweather.gov (takes ~1-2 seconds total).
+4. If valid data is returned, a formatted reply is sent via SMS.
+5. If the message doesn't contain a valid 4-letter code, or the
+   code returns no data, NO reply is sent.
+
+
+CUSTOMISATION
+=============
+
+Change the reply format:
+  Edit the JavaScript — look for the "reply +=" lines.
+  Example: add a timestamp:
+    reply = "=== " + icao + " @ " + new Date().toLocaleTimeString() + " ===\n\n";
+
+Only respond to specific senders:
+  In the Profile's Event settings (Received Text), set the
+  "Sender" field to a contact name or phone number.
+
+Add a keyword trigger (e.g. only respond to "WX YSSY"):
+  In the Profile's Event → Content field, enter: WX*
+  Or change the regex in the JavaScript:
+    var match = body.match(/^WX\s+([A-Z]{4})$/);
+
+Switch to NAIPS source:
+  Replace the JavaScript in Action 3 with the contents of
+  naips_weather_fetch.js. Fill in your NAIPS username and
+  password at the top of the script. Note: the NAIPS briefing
+  URL may need adjustment — test with your credentials first.
+
+
+TROUBLESHOOTING
+===============
+
+No reply received:
+  - Check Tasker is active (green lightning bolt in notification)
+  - Check SMS permissions are granted to Tasker
+  - Check internet/data is on
+  - Try flashing the variables for debugging:
+    Add a Flash action after the JavaScriptlet:
+    Text: icao=%reply valid=%valid
+
+Reply is empty or says "N/A":
+  - The ICAO code may not exist in the aviationweather.gov database
+  - Try common Australian airports: YSSY, YMML, YBBN, YPAD, YPPH
+
+"JavaScriptlet error" in Tasker log:
+  - Make sure the code is pasted exactly (no extra line breaks)
+  - Check that Tasker's JavaScript engine is set to Auto or Rhino
+    (Tasker Preferences → Misc → JavaScript Engine)
+
+Slow response:
+  - aviationweather.gov typically responds in <1 second
+  - If slow, check your mobile data connection
+  - The 45-second timeout in the JavaScriptlet prevents hangs
+
+
+AVIATION WEATHER API REFERENCE
+==============================
+Base URL: https://aviationweather.gov/api/data/
+
+Endpoints:
+  /metar?ids=ICAO&format=raw    — current METAR
+  /taf?ids=ICAO&format=raw      — current TAF
+  /metar?ids=ICAO&format=json   — decoded METAR (JSON)
+  /taf?ids=ICAO&format=json     — decoded TAF (JSON)
+
+Multiple stations: ids=YSSY,YMML,YBBN (comma-separated)
+Historical: add &hours=6 for last 6 hours of reports
+
+No authentication required. Free to use.
+Rate limit: 100 requests/minute.
+
+================================================================
