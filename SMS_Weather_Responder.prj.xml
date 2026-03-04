@@ -20,7 +20,6 @@
         <Event sr="con0" ve="2">
             <code>7</code>
             <pri>0</pri>
-            <!-- Event: Received Text (SMS) — Type: Any -->
             <Int sr="arg0" val="0"/>
             <Str sr="arg1" ve="3"></Str>
             <Str sr="arg2" ve="3"></Str>
@@ -28,7 +27,10 @@
     </Profile>
 
     <!-- ======================================================== -->
-    <!-- TASK: Fetch Weather and Reply via SMS                     -->
+    <!-- TASK: Fetch Weather from NAIPS and Reply via SMS           -->
+    <!-- NOTE: After importing, open Action 3 (JavaScriptlet) and  -->
+    <!-- paste the contents of weather_fetch_naips.js into it.     -->
+    <!-- Then set your NAIPS credentials at the top of the script. -->
     <!-- ======================================================== -->
     <Task sr="task0" ve="2">
         <cdate>1709500000000</cdate>
@@ -36,7 +38,7 @@
         <id>11</id>
         <nme>Fetch Weather and Reply</nme>
 
-        <!-- Action 1: Copy %SMSRB → %sms_body -->
+        <!-- Action 1: Variable Set — Copy %SMSRB to %sms_body -->
         <Action sr="act0" ve="7">
             <code>547</code>
             <Str sr="arg0" ve="3">%sms_body</Str>
@@ -47,7 +49,7 @@
             <Int sr="arg5" val="0"/>
         </Action>
 
-        <!-- Action 2: Copy %SMSRF → %sms_from -->
+        <!-- Action 2: Variable Set — Copy %SMSRF to %sms_from -->
         <Action sr="act1" ve="7">
             <code>547</code>
             <Str sr="arg0" ve="3">%sms_from</Str>
@@ -58,53 +60,21 @@
             <Int sr="arg5" val="0"/>
         </Action>
 
-        <!-- Action 3: JavaScriptlet — fetch METAR + TAF, set %reply and %valid -->
+        <!-- Action 3: JavaScriptlet — NAIPS SOAP Weather Fetch    -->
+        <!-- PASTE contents of weather_fetch_naips.js here         -->
         <Action sr="act2" ve="7">
             <code>664</code>
-            <Str sr="arg0" ve="3">
-// SMS Weather Auto-Responder
-// Source: aviationweather.gov (free, no auth)
-
-var body = sms_body.toString().trim().toUpperCase();
-
-// Extract 4-letter ICAO code
-var icao = "";
-var match = body.match(/\b([A-Z]{4})\b/);
-if (match) { icao = match[1]; }
-
-var valid = 0;
-var reply = "";
-
-if (icao.length === 4) {
-
-    // Fetch METAR
-    var xhr1 = new XMLHttpRequest();
-    xhr1.open("GET", "https://aviationweather.gov/api/data/metar?ids=" + icao + "&amp;format=raw", false);
-    xhr1.send();
-    var metar = (xhr1.status === 200) ? xhr1.responseText.trim() : "";
-
-    // Fetch TAF
-    var xhr2 = new XMLHttpRequest();
-    xhr2.open("GET", "https://aviationweather.gov/api/data/taf?ids=" + icao + "&amp;format=raw", false);
-    xhr2.send();
-    var taf = (xhr2.status === 200) ? xhr2.responseText.trim() : "";
-
-    if (metar.length > 0 || taf.length > 0) {
-        valid = 1;
-        reply = "=== " + icao + " ===\n\n";
-        reply += (metar.length > 0) ? "METAR:\n" + metar + "\n\n" : "METAR: N/A\n\n";
-        reply += (taf.length > 0) ? "TAF:\n" + taf : "TAF: N/A";
-    }
-}
-
-setLocal("reply", reply);
-setLocal("valid", valid.toString());
-            </Str>
+            <Str sr="arg0" ve="3"><![CDATA[// PASTE the contents of weather_fetch_naips.js here
+// Then replace YOUR_USERNAME_HERE and YOUR_PASSWORD_HERE
+// with your NAIPS credentials.
+flash("Please paste weather_fetch_naips.js code into this JavaScriptlet action");
+setLocal("valid", "0");
+setLocal("reply", "");]]></Str>
             <Str sr="arg1" ve="3"></Str>
             <Int sr="arg2" val="45"/>
         </Action>
 
-        <!-- Action 4: If %valid eq 1 -->
+        <!-- Action 4: If %valid equals 1 -->
         <Action sr="act3" ve="7">
             <code>35</code>
             <Str sr="arg0" ve="3">%valid</Str>
@@ -113,7 +83,7 @@ setLocal("valid", valid.toString());
             <Str sr="arg3" ve="3"></Str>
         </Action>
 
-        <!-- Action 5: Send SMS reply -->
+        <!-- Action 5: Send SMS — Reply to sender with weather -->
         <Action sr="act4" ve="7">
             <code>37</code>
             <Str sr="arg0" ve="3">%sms_from</Str>

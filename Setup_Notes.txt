@@ -1,62 +1,79 @@
 ================================================================
   SMS WEATHER AUTO-RESPONDER — Setup Notes
   Tasker Project for Android
+  Data Source: NAIPS (Airservices Australia)
 ================================================================
 
 OVERVIEW
 --------
 This Tasker project automatically replies to incoming SMS messages
-containing an ICAO airport code (e.g. YSSY, YMML, YPAD) with the
-current METAR and TAF for that location.
+containing an ICAO airport code (e.g. YSSY, YBDV, YMML) with the
+current METAR and TAF for that location, pulled from NAIPS.
 
-DATA SOURCE: aviationweather.gov (NOAA/FAA)
-  - Free, no login required, no API key
-  - Covers all Australian ICAO airports
-  - Returns official METAR/TAF data
-  - Rate limit: 100 requests/minute (more than enough)
+HOW IT WORKS (Technical)
+  The script uses the NAIPS SOAP Web Service — a proper API that
+  Airservices Australia exposes at:
+    https://www.airservicesaustralia.com/naips/briefing-service
 
-WHY NOT NAIPS?
-  NAIPS requires an authenticated web session (cookies, ASP.NET),
-  which is fragile on a phone — sessions expire, cookies get lost,
-  and the login adds 2-3 extra HTTP round-trips every time.
-  aviationweather.gov gives the same METAR/TAF data in a single
-  unauthenticated GET request, making it near-instantaneous.
+  Each request carries your credentials in the SOAP XML body.
+  No browser login, no cookies, no session management needed.
+  A single HTTP POST returns the briefing data directly.
 
-  If you specifically need NAIPS, see the included
-  naips_weather_fetch.js — you'll need to fill in your credentials
-  and potentially adjust the briefing URL after testing.
+  This is the same API used by tools like Get-AirServicesBriefing
+  (PowerShell) and other aviation automation projects.
 
 
 FILES INCLUDED
 --------------
 1. SMS_Weather_Responder.prj.xml  — Tasker project (import this)
-2. weather_fetch.js               — JavaScript source (reference)
-3. naips_weather_fetch.js          — NAIPS alternative (if needed)
-4. Setup_Notes.txt                 — This file
+2. weather_fetch_naips.js         — JavaScript for JavaScriptlet (NAIPS SOAP)
+3. weather_fetch.js               — Alternative using aviationweather.gov (no auth, works for major airports)
+4. naips_weather_fetch.js         — Old NAIPS web scraping version (deprecated, kept for reference)
+5. Setup_Notes.txt                — This file
 
 
-QUICK SETUP (5 minutes)
-========================
-
-OPTION A — Import the Project XML
-----------------------------------
-1. Copy SMS_Weather_Responder.prj.xml to your phone.
-2. In Tasker, long-press the home icon (bottom bar) → Import Project.
-3. Navigate to the XML file and import it.
-4. The profile "SMS Weather Auto-Responder" should appear and be
-   active immediately.
-5. Send a test SMS to your phone with just "YSSY" and verify you
-   get a reply with METAR + TAF.
-
-NOTE: If the XML import fails (Tasker version mismatch), use
-Option B below to build it manually — takes about 5 minutes.
+REQUIREMENTS
+------------
+• Tasker (v5.0+ recommended, tested on 6.x)
+• Active internet connection (mobile data or WiFi)
+• NAIPS account (free — register at https://www.airservicesaustralia.com/naips/Account/Register)
+• SMS permissions granted to Tasker
 
 
-OPTION B — Manual Setup (Step by Step)
----------------------------------------
+QUICK SETUP
+============
+
+STEP 1: Import the Tasker Project
+  1. Copy SMS_Weather_Responder.prj.xml to your phone
+  2. In Tasker: long-press home icon (bottom bar) → Import Project
+  3. Navigate to the file and import
+
+STEP 2: Paste the JavaScript
+  1. Open the imported project
+  2. Go to Tasks → "Fetch Weather and Reply"
+  3. Tap Action 3 (JavaScriptlet)
+  4. Replace the placeholder code with the ENTIRE contents of
+     weather_fetch_naips.js
+  5. Change these two lines at the top:
+       var NAIPS_USER = "YOUR_USERNAME_HERE";
+       var NAIPS_PASS = "YOUR_PASSWORD_HERE";
+     to your actual NAIPS username and password.
+     IMPORTANT: Username MUST be UPPERCASE.
+
+STEP 3: Test
+  From another phone, send an SMS to your number:
+    YBDV
+  You should receive a reply with METAR and TAF.
+
+  If you get "NAIPS login failed" → double-check credentials.
+  If you get no reply → check Tasker is running and has SMS permissions.
+
+
+MANUAL BUILD (if XML import fails)
+====================================
 
 STEP 1: Create the Task
-  Tasker → Tasks tab → + (add) → Name: "Fetch Weather and Reply"
+  Tasker → Tasks tab → + → Name: "Fetch Weather and Reply"
 
   Action 1 — Variable Set
     Name:  %sms_body
@@ -67,8 +84,9 @@ STEP 1: Create the Task
     To:    %SMSRF
 
   Action 3 — JavaScriptlet
-    Code:  (paste the contents of weather_fetch.js — see below)
+    Code:  (paste the ENTIRE contents of weather_fetch_naips.js)
     Timeout: 45 seconds
+    Auto Exit: unchecked
 
   Action 4 — If
     Condition: %valid  eq  1
@@ -79,145 +97,100 @@ STEP 1: Create the Task
 
   Action 6 — End If
 
-
 STEP 2: Create the Profile
-  Tasker → Profiles tab → + (add)
-  → Event → Phone → Received Text
-  → Type: Any
-  → Leave Sender and Content fields empty (match all)
-  → Back → select task "Fetch Weather and Reply"
+  Profiles tab → + → Event → Phone → Received Text
+  Type: Any
+  Leave Sender and Content fields empty
+  Back → select task "Fetch Weather and Reply"
 
 
-STEP 3: Test
-  From another phone, send an SMS to your number containing:
-    YSSY
-  You should receive a reply like:
+SAMPLE OUTPUT
+=============
+  SMS received: "YBDV"
 
-    === YSSY ===
+  Reply sent:
+  === YBDV ===
 
-    METAR:
-    METAR YSSY 031330Z AUTO 17006KT 9999 // FEW056 OVC110 23/21 Q1012
+  METAR:
+  METAR YBDV 040000Z 35008KT 9999 FEW040 SCT100 27/19 Q1012
 
-    TAF:
-    TAF AMD YSSY 031308Z 0313/0418 18005KT 9999 -SHRA FEW015
-      FM031500 01009KT 9999 -SHRA FEW015 ...
-
-
-JAVASCRIPT CODE (for Action 3 — JavaScriptlet)
-===============================================
-Copy everything between the dashed lines:
-
-------------------------------------------------------------
-var body = sms_body.toString().trim().toUpperCase();
-
-var icao = "";
-var match = body.match(/\b([A-Z]{4})\b/);
-if (match) { icao = match[1]; }
-
-var valid = 0;
-var reply = "";
-
-if (icao.length === 4) {
-
-    var xhr1 = new XMLHttpRequest();
-    xhr1.open("GET", "https://aviationweather.gov/api/data/metar?ids=" + icao + "&format=raw", false);
-    xhr1.send();
-    var metar = (xhr1.status === 200) ? xhr1.responseText.trim() : "";
-
-    var xhr2 = new XMLHttpRequest();
-    xhr2.open("GET", "https://aviationweather.gov/api/data/taf?ids=" + icao + "&format=raw", false);
-    xhr2.send();
-    var taf = (xhr2.status === 200) ? xhr2.responseText.trim() : "";
-
-    if (metar.length > 0 || taf.length > 0) {
-        valid = 1;
-        reply = "=== " + icao + " ===\n\n";
-        reply += (metar.length > 0) ? "METAR:\n" + metar + "\n\n" : "METAR: N/A\n\n";
-        reply += (taf.length > 0) ? "TAF:\n" + taf : "TAF: N/A";
-    }
-}
-
-setLocal("reply", reply);
-setLocal("valid", valid.toString());
-------------------------------------------------------------
+  TAF:
+  TAF YBDV 032300Z 0400/0412 33010KT 9999 FEW035
+    BECMG 0404/0406 17008KT
 
 
-HOW IT WORKS
-============
-1. Any incoming SMS triggers the profile.
-2. The JavaScriptlet extracts the first 4-letter uppercase word
-   from the SMS body as the ICAO code.
-3. Two HTTP GET requests fetch raw METAR and TAF from
-   aviationweather.gov (takes ~1-2 seconds total).
-4. If valid data is returned, a formatted reply is sent via SMS.
-5. If the message doesn't contain a valid 4-letter code, or the
-   code returns no data, NO reply is sent.
+HOW THE SOAP REQUEST WORKS
+===========================
+The script sends a SOAP XML request like this:
+
+  POST https://www.airservicesaustralia.com/naips/briefing-service
+  Content-Type: text/xml
+  SOAPAction: ...briefing-service?wsdl
+
+  <loc-brief-rqs password="xxx" requestor="XXX" source="sms-wx">
+    <loc>YBDV</loc>
+    <flags met="true"/>
+  </loc-brief-rqs>
+
+The response contains a <content> element with plain text
+including METAR, TAF, ATIS, NOTAM etc. The script extracts
+just the METAR and TAF lines.
+
+The "loc-brief" operation supports up to 12 locations per
+request. Currently the script sends one at a time (matching
+the SMS use case).
 
 
 CUSTOMISATION
 =============
 
-Change the reply format:
-  Edit the JavaScript — look for the "reply +=" lines.
-  Example: add a timestamp:
-    reply = "=== " + icao + " @ " + new Date().toLocaleTimeString() + " ===\n\n";
+Change reply format:
+  Edit the JavaScript — look for the "reply +=" lines near the bottom.
 
 Only respond to specific senders:
-  In the Profile's Event settings (Received Text), set the
-  "Sender" field to a contact name or phone number.
+  In Profile → Event (Received Text) → set Sender field.
 
-Add a keyword trigger (e.g. only respond to "WX YSSY"):
-  In the Profile's Event → Content field, enter: WX*
-  Or change the regex in the JavaScript:
-    var match = body.match(/^WX\s+([A-Z]{4})$/);
+Add a keyword trigger (e.g. "WX YBDV"):
+  Change the regex in the JavaScript:
+    var m = body.match(/^WX\s+([A-Z]{4})$/);
 
-Switch to NAIPS source:
-  Replace the JavaScript in Action 3 with the contents of
-  naips_weather_fetch.js. Fill in your NAIPS username and
-  password at the top of the script. Note: the NAIPS briefing
-  URL may need adjustment — test with your credentials first.
+Request multiple products:
+  To include ATIS, change the flags line in the SOAP XML:
+    '<ns1:flags met="true" ntm="false"/>'
+  Then add an ATIS extraction regex similar to METAR/TAF.
+
+Include NOTAMs:
+  Set ntm="true" in the flags. Add parsing for NOTAM blocks.
+
+Switch to aviationweather.gov (for major airports only):
+  Replace the JavaScriptlet code with weather_fetch.js.
+  No credentials needed, but only covers international airports.
 
 
 TROUBLESHOOTING
 ===============
 
 No reply received:
-  - Check Tasker is active (green lightning bolt in notification)
-  - Check SMS permissions are granted to Tasker
-  - Check internet/data is on
-  - Try flashing the variables for debugging:
-    Add a Flash action after the JavaScriptlet:
-    Text: icao=%reply valid=%valid
+  - Check Tasker is active (green dot in notification bar)
+  - Check SMS and Internet permissions for Tasker
+  - Add a Flash action after the JavaScriptlet for debugging:
+    Text: valid=%valid icao=%icao
 
-Reply is empty or says "N/A":
-  - The ICAO code may not exist in the aviationweather.gov database
-  - Try common Australian airports: YSSY, YMML, YBBN, YPAD, YPPH
+"NAIPS login failed" reply:
+  - Username must be UPPERCASE
+  - Password is 7-20 alphanumeric characters only
+  - Try logging into NAIPS website to verify credentials work
 
-"JavaScriptlet error" in Tasker log:
-  - Make sure the code is pasted exactly (no extra line breaks)
-  - Check that Tasker's JavaScript engine is set to Auto or Rhino
-    (Tasker Preferences → Misc → JavaScript Engine)
+Empty reply / "N/A" for both:
+  - The station may not have current METAR/TAF issued
+  - Try a known station like YSSY or YMML to verify connectivity
+
+JavaScriptlet error in Tasker log:
+  - Ensure code is pasted exactly (no extra line breaks at start)
+  - Set Tasker Preferences → Misc → JavaScript Engine to "Auto"
 
 Slow response:
-  - aviationweather.gov typically responds in <1 second
-  - If slow, check your mobile data connection
-  - The 45-second timeout in the JavaScriptlet prevents hangs
-
-
-AVIATION WEATHER API REFERENCE
-==============================
-Base URL: https://aviationweather.gov/api/data/
-
-Endpoints:
-  /metar?ids=ICAO&format=raw    — current METAR
-  /taf?ids=ICAO&format=raw      — current TAF
-  /metar?ids=ICAO&format=json   — decoded METAR (JSON)
-  /taf?ids=ICAO&format=json     — decoded TAF (JSON)
-
-Multiple stations: ids=YSSY,YMML,YBBN (comma-separated)
-Historical: add &hours=6 for last 6 hours of reports
-
-No authentication required. Free to use.
-Rate limit: 100 requests/minute.
+  - The NAIPS SOAP service typically responds in 1-3 seconds
+  - The 45-second timeout prevents hangs on poor connections
 
 ================================================================
